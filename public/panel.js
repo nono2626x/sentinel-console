@@ -164,6 +164,10 @@ async function tick() {
   try {
     const data = await api("/api/victims");
     if (data.ok) {
+      // A valid cookie at load time still left the overlay up: only the login
+      // handler ever hid it, so a refresh looked like an expired session and
+      // the operator retyped the password for nothing.
+      showLogin(false);
       state.victims = data.victims;
       render();
       for (const win of state.windows.values()) if (win.poll) win.poll();
