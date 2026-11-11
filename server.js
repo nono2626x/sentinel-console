@@ -419,10 +419,13 @@ const server = http.createServer(async (req, res) => {
     if (path === "/api/history") {
       if (!requireAuth(req, res)) return;
       const vid = url.searchParams.get("vid") || "";
+      // A window only needs the tail of the history; the panel asks for less than
+      // the 120 the full view wants so a beat does not drag every old output.
+      const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 120, 1), 300);
       const r = await pool.query(
         `select id, verb, args, created, dispatched, finished, exit_code, output, err
-           from commands where vid = $1 order by id desc limit 120`,
-        [vid]
+           from commands where vid = $1 order by id desc limit $2`,
+        [vid, limit]
       );
       return json(res, 200, { ok: true, commands: r.rows });
     }
