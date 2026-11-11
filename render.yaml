@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: xtrem-c2
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: "echo no-build"
+    startCommand: "node server.js"
+    envVars:
+      - key: C2_KEY
+        sync: false
+    healthCheckPath: /

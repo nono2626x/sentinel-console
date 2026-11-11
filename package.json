@@ -1,0 +1,14 @@
+{
+  "name": "sentinel-console",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Operator console and beacon service",
+  "main": "server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.5"
+  }
+}

