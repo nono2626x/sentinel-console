@@ -43,8 +43,8 @@
   </div>
 </main>
 
-<div id="menu"></div>
-
+<!-- openMenu() builds its own #menu node. A static one here gave the DOM two
+     elements with the same id, and getElementById() returned the empty one. -->
 <div id="login">
   <div class="card">
     <h1>SENTINEL</h1>

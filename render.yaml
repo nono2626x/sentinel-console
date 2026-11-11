@@ -14,6 +14,6 @@ services:
       - key: AGENT_SECRET
         sync: false
       - key: SESSION_SECRET
-        sync: false
+        generateValue: true
       - key: PANEL_PASS
         sync: false

