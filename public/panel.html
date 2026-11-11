@@ -8,47 +8,100 @@
 </head>
 <body>
 
-<header>
-  <div class="brand">SENTINEL<span>.</span></div>
-  <div class="stats">
-    <div class="on">en ligne <b id="s-on">0</b></div>
-    <div>total <b id="s-all">0</b></div>
-    <div>file <b id="s-q">0</b></div>
-  </div>
-  <div class="spacer"></div>
-  <input type="text" id="filter" placeholder="filtrer : pays, pc, utilisateur, ip…" style="width:280px">
-  <button class="ghost" id="btn-refresh">Rafraîchir</button>
-  <button class="ghost" id="btn-logout">Sortir</button>
-</header>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <span class="mark">S</span>
+      <div class="nm"><b>SENTINEL</b><small>CONSOLE</small></div>
+    </div>
 
-<main>
-  <div id="gridwrap">
-    <table>
-      <thead>
-        <tr>
-          <th data-sort="host">PC</th>
-          <th data-sort="username">Utilisateur</th>
-          <th data-sort="os">OS</th>
-          <th data-sort="country">Pays</th>
-          <th data-sort="ip">IP</th>
-          <th data-sort="admin">Privilèges</th>
-          <th data-sort="active_window">Fenêtre active</th>
-          <th data-sort="ping_ms">Ping</th>
-          <th data-sort="idle">Vu</th>
-          <th data-sort="tag">Tag</th>
-        </tr>
-      </thead>
-      <tbody id="rows"></tbody>
-    </table>
+    <nav class="nav">
+      <a class="on"><span>Agents</span><em>live</em></a>
+      <a><span>Console</span></a>
+      <a><span>Fichiers</span></a>
+      <a><span>Événements</span></a>
+      <a><span>Réglages</span></a>
+    </nav>
+
+    <div class="sidefoot">
+      <div class="live"><i></i> C2 opérationnel</div>
+      <small>v1.5.0 · postgres</small>
+    </div>
+  </aside>
+
+  <div class="content">
+    <header>
+      <div class="titles">
+        <h1>Agents</h1>
+        <p>Postes connectés à la console</p>
+      </div>
+      <div class="spacer"></div>
+      <div class="search">
+        <input type="text" id="filter" placeholder="filtrer : pc, utilisateur, ip, tag…">
+      </div>
+      <button class="ghost" id="btn-refresh">Rafraîchir</button>
+      <button class="ghost" id="btn-logout">Sortir</button>
+    </header>
+
+    <section class="cards">
+      <div class="stat up">
+        <div class="k">En ligne</div>
+        <div class="v" id="s-on">0</div>
+        <div class="h">agents actifs</div>
+      </div>
+      <div class="stat">
+        <div class="k">Total</div>
+        <div class="v" id="s-all">0</div>
+        <div class="h">postes connus</div>
+      </div>
+      <div class="stat">
+        <div class="k">File</div>
+        <div class="v" id="s-q">0</div>
+        <div class="h">commandes en attente</div>
+      </div>
+      <div class="stat">
+        <div class="k">Latence</div>
+        <div class="v" id="s-lat">—</div>
+        <div class="h">long-poll 20 s</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panelhead">
+        <h2>Postes</h2>
+        <span class="hint">clic droit sur une ligne pour les commandes</span>
+      </div>
+      <div id="gridwrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-sort="host">PC</th>
+              <th data-sort="username">Utilisateur</th>
+              <th data-sort="os">OS</th>
+              <th data-sort="country">Pays</th>
+              <th data-sort="ip">IP</th>
+              <th data-sort="admin">Privilèges</th>
+              <th data-sort="active_window">Fenêtre active</th>
+              <th data-sort="ping_ms">Ping</th>
+              <th data-sort="idle">Vu</th>
+              <th data-sort="tag">Tag</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
-</main>
+</div>
 
 <!-- openMenu() builds its own #menu node. A static one here gave the DOM two
      elements with the same id, and getElementById() returned the empty one. -->
 <div id="login">
   <div class="card">
-    <h1>SENTINEL</h1>
-    <p>Console opérateur</p>
+    <div class="brand"><span class="mark">S</span>
+      <div class="nm"><b>SENTINEL</b><small>CONSOLE</small></div>
+    </div>
+    <p>Accès opérateur</p>
     <input type="password" id="pass" placeholder="mot de passe" autocomplete="current-password">
     <button id="btn-login">Entrer</button>
     <div class="err" id="login-err"></div>
