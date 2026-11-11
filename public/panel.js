@@ -127,8 +127,14 @@ function render() {
       <td>${Number(v.ping_ms) || 0} ms</td>
       <td>${seen(Number(v.idle) || 0)}</td>
       <td>${esc(v.tag || "")}</td>`;
+    tr.addEventListener("contextmenu", (e) => e.preventDefault());
     tr.addEventListener("mousedown", (e) => {
       if (e.button === 2) {
+        // the document-level closer also listens on mousedown: it saw this
+        // same event bubble up, found the target outside #menu and closed it
+        // again, so the right-click menu never survived a frame
+        e.preventDefault();
+        e.stopPropagation();
         state.selected = v.id;
         render();
         openMenu(e.clientX, e.clientY, v);
