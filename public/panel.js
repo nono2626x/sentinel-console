@@ -152,6 +152,12 @@ function render() {
   $("s-on").textContent = online;
   $("s-all").textContent = state.victims.length;
   $("s-q").textContent = queued;
+  // the beacon announces how long it holds its poll open; show the slowest live agent
+  const pings = state.victims
+    .filter((v) => v.idle < 120)
+    .map((v) => Number(v.ping_ms) || 0)
+    .filter(Boolean);
+  $("s-lat").textContent = pings.length ? Math.round(Math.max(...pings) / 1000) + " s" : "—";
 }
 
 async function tick() {
