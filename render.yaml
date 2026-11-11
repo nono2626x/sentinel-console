@@ -1,12 +1,19 @@
 services:
   - type: web
-    name: xtrem-c2
+    name: sentinel-console
     runtime: node
     plan: free
     region: frankfurt
-    buildCommand: "echo no-build"
-    startCommand: "node server.js"
+    branch: main
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
     envVars:
-      - key: C2_KEY
+      - key: DATABASE_URL
         sync: false
-    healthCheckPath: /
+      - key: AGENT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: PANEL_PASS
+        sync: false

