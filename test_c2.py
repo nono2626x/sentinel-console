@@ -167,7 +167,11 @@ def main():
     status, data, _ = call("/api/remove", json.dumps({"vid": AGENT}), auth)
     check("victim removed", status == 200 and data.get("ok"), str(data))
     status, data, _ = call("/api/victims", headers=auth)
-    check("grid empty again", not data.get("victims"), str(data)[:200])
+    # Only the harness agent must be gone. The real fleet stays: asserting an
+    # empty grid only passed on a virgin database and failed every run after the
+    # first live beacon registered.
+    remaining = [v.get("id") for v in (data.get("victims") or [])]
+    check("harness agent gone", AGENT not in remaining, str(remaining)[:200])
 
     print("\n%d passed, %d failed" % (ok, fail))
     return 0 if fail == 0 else 1
