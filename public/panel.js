@@ -52,6 +52,7 @@ $("btn-login").addEventListener("click", async () => {
     $("login-err").textContent = "";
     $("pass").value = "";
     showLogin(false);
+    await loadActions();
     tick();
   } else {
     $("login-err").textContent = "mot de passe refusé";
@@ -181,7 +182,11 @@ async function tick() {
 }
 
 // -------------------------------------------------------------------- menu --
-const MODULES = [
+// Fallback only. The server owns the module tree now (GET /api/actions) so a
+// verb the agent stopped handling can never keep a button on the panel. This
+// list is what renders when the registry is unreachable or the session is not
+// authenticated yet, and it must stay a subset of what server.js advertises.
+const FALLBACK_MODULES = [
   {
     label: "Système",
     items: [
@@ -285,6 +290,26 @@ const MODULES = [
   }
 ];
 
+let MODULES = FALLBACK_MODULES;
+
+// Pulls the authoritative tree. A malformed or empty answer leaves the
+// fallback in place: a panel with no menu is worse than a panel with one stale
+// entry, and the stale entry at least fails loudly with "verbe non implemente".
+async function loadActions() {
+  try {
+    const res = await fetch("/api/actions", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const body = await res.json();
+    const groups = Array.isArray(body && body.groups) ? body.groups : null;
+    if (!groups || groups.length === 0) return;
+    MODULES = groups.filter(
+      (g) => g && typeof g.label === "string" && Array.isArray(g.items) && g.items.length
+    );
+  } catch (e) {
+    /* offline or logged out: keep the fallback */
+  }
+}
+
 let menuEl = null;
 
 function closeMenus() {
@@ -366,6 +391,10 @@ function dispatch(victim, mod) {
   if (mod.verb === "_uploads") return openUploads(victim);
   if (mod.verb === "_history") return openHistory(victim);
   if (mod.verb === "_chat") return openChat(victim);
+
+  // The registry marks verbs that end the session or wipe state. A misfired
+  // right-click on "Éteindre" should not power off a machine mid-job.
+  if (mod.danger && !confirm(mod.label + " sur " + (victim.host || victim.id) + " ?")) return;
 
   let args = mod.args || "";
   if (mod.prompt) {
@@ -546,6 +575,7 @@ async function beat() {
     beatBusy = false;
   }
 }
+loadActions();
 beat();
 setInterval(beat, 3000);
 state.timer = setInterval(tick, 5000);

