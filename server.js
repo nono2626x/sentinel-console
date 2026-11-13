@@ -473,7 +473,15 @@ async function handleResult(req, res, body) {
   await pool.query(
     `update commands set finished = now(), exit_code = $2, output = $3, err = $4
       where id = $1 and vid = $5`,
-    [msg.id, Number(msg.exit) || 0, String(msg.output || "").slice(0, 400000), msg.err || null, id]
+    [
+      msg.id,
+      Number(msg.exit) || 0,
+      // The shipping agent posts "output"; the notification helpers post "out".
+      // Reading one key whole silently emptied every result from the other.
+      String(msg.output != null ? msg.output : msg.out || "").slice(0, 400000),
+      msg.err || null,
+      id
+    ]
   );
 
   if (Array.isArray(msg.files)) {
